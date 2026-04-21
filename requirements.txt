@@ -4,7 +4,4 @@ python-dotenv
 Pillow>=10.0.0
 PyPDF2>=3.0.0
 python-docx>=1.0.0
-# Real-ESRGAN اختياري (قد يحتاج تثبيت torch و basicsr)
-# realesrgan
-# torch
-# basicsr
+requests
