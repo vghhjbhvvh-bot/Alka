@@ -30,7 +30,7 @@ async def require_subscription(update: Update, context: CallbackContext) -> bool
     await send_subscription_prompt(update, context, FORCE_SUBSCRIBE_CHANNEL_URL)
     return False
 
-# --- أوامر البداية والمسح (مع إضافة شرح أمر الرسم) ---
+# --- أوامر البداية والمسح ---
 async def start(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -42,7 +42,7 @@ async def start(update: Update, context: CallbackContext):
         "💬 **تحدث معي** وأنا أتذكر سياق المحادثة.\n"
         "🪄 **اطلب تحسين صورة** بقولك 'حسن الصورة'.\n"
         "🎨 **ارسم صورة** باستخدام الأمر:\n"
-        "`/draw وصف الصورة` أو `/تخيل وصف الصورة`\n\n"
+        "`/draw وصف الصورة بالعربية أو الإنجليزية`\n\n"
         "استمتع! 🚀",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -69,7 +69,7 @@ async def clear_history(update: Update, context: CallbackContext):
     chat_manager.clear_history(user_id)
     await update.message.reply_text("🧹 تم مسح تاريخ المحادثة.")
 
-# --- أمر الرسم الجديد ---
+# --- أمر الرسم (draw فقط) ---
 async def draw_command(update: Update, context: CallbackContext):
     """معالج الأمر /draw"""
     if not await require_subscription(update, context):
@@ -81,8 +81,8 @@ async def draw_command(update: Update, context: CallbackContext):
             "🎨 **استخدام أمر الرسم:**\n"
             "`/draw وصف الصورة التي تريد رسمها`\n\n"
             "**مثال:**\n"
-            "`/draw قطة ترتدي قبعة ساحر في غابة سحرية`\n\n"
-            "يمكنك أيضاً استخدام `/تخيل`.\n\n"
+            "`/draw قطة ترتدي قبعة ساحر في غابة سحرية`\n"
+            "`/draw a cute cat wearing a wizard hat`\n\n"
             f"{get_available_models_text()}",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -125,7 +125,7 @@ async def draw_command(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل رسم الصورة: {e}", exc_info=True)
         await processing_msg.edit_text("❌ حدث خطأ غير متوقع أثناء رسم الصورة.")
 
-# --- معالج الصور (بدون تغيير) ---
+# --- باقي المعالجات كما هي بدون تغيير ---
 async def handle_photo(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -145,7 +145,6 @@ async def handle_photo(update: Update, context: CallbackContext):
     finally:
         if os.path.exists(photo_path): os.remove(photo_path)
 
-# --- معالج تحسين الصور (بدون تغيير) ---
 async def handle_enhance_request(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     reply_to_message = update.message.reply_to_message
@@ -177,7 +176,6 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
     finally:
         if 'photo_path' in locals() and os.path.exists(photo_path): os.remove(photo_path)
 
-# --- معالج الملفات (بدون تغيير) ---
 async def handle_document(update: Update, context: CallbackContext):
     if not await require_subscription(update, context): return
     user_id = update.effective_user.id
@@ -207,7 +205,6 @@ async def handle_document(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل معالجة الملف: {e}", exc_info=True)
         await processing_msg.edit_text("❌ حدث خطأ أثناء معالجة الملف.")
 
-# --- معالج النصوص والمحادثة (بدون تغيير) ---
 async def handle_text(update: Update, context: CallbackContext):
     if not await require_subscription(update, context): return
     user_id = update.effective_user.id
@@ -230,7 +227,6 @@ async def handle_text(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل الرد: {e}", exc_info=True)
         await processing_msg.edit_text("❌ عذراً، حدث خطأ أثناء معالجة طلبك.")
 
-# --- دوال إنشاء الملفات والأزرار (بدون تغيير) ---
 async def handle_potential_file_creation(update: Update, response: str) -> bool:
     code_block_pattern = r"```(\w+)?\n(.*?)```"
     matches = re.findall(code_block_pattern, response, re.DOTALL)
@@ -262,7 +258,7 @@ def main():
     application.add_handler(CommandHandler("about", about))
     application.add_handler(CommandHandler("clear", clear_history))
     application.add_handler(CommandHandler("draw", draw_command))
-    application.add_handler(CommandHandler("تخيل", draw_command))
+    # تم إزالة السطر الذي كان يسبب الخطأ: application.add_handler(CommandHandler("تخيل", draw_command))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="check_subscription"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
