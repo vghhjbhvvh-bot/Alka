@@ -1,13 +1,20 @@
-import os, logging, tempfile, re
+import os
+import logging
+import tempfile
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler, PicklePersistence
 from telegram.constants import ParseMode
-from config import *
+from config import (
+    TELEGRAM_BOT_TOKEN, BOT_NAME, BOT_DEVELOPER,
+    FORCE_SUBSCRIBE_CHANNEL_ID, FORCE_SUBSCRIBE_CHANNEL_URL
+)
 from groq_service import analyze_image, chat_with_ai, analyze_document, analyze_code
 from image_processor import enhance_image_quality_legendary
 from subscription import check_user_subscription, send_subscription_prompt, subscription_button_callback
 from persistence import ChatHistoryManager
-from file_handler import extract_text_from_file, CODE_EXTENSIONS
+from file_handler import extract_text_from_file
+from image_generator import generate_image, get_available_models_text
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,34 +25,110 @@ user_last_photo = {}
 
 # --- دوال مساعدة للاشتراك (بدون تغيير) ---
 async def require_subscription(update: Update, context: CallbackContext) -> bool:
-    if await check_user_subscription(update, context, FORCE_SUBSCRIBE_CHANNEL_ID): return True
-    await send_subscription_prompt(update, context, FORCE_SUBSCRIBE_CHANNEL_URL); return False
+    if await check_user_subscription(update, context, FORCE_SUBSCRIBE_CHANNEL_ID):
+        return True
+    await send_subscription_prompt(update, context, FORCE_SUBSCRIBE_CHANNEL_URL)
+    return False
 
-# --- أوامر البداية والمسح (بدون تغيير) ---
+# --- أوامر البداية والمسح (مع إضافة شرح أمر الرسم) ---
 async def start(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
+    if not await require_subscription(update, context):
+        return
     await update.message.reply_text(
         f"👋 **مرحباً بك في {BOT_NAME}!**\n"
         f"تم تطويري بواسطة **{BOT_DEVELOPER}**.\n\n"
         "🎭 **أرسل صورة** لتحليلها.\n"
         "📄 **أرسل ملفاً** (TXT, PDF, DOCX, كود) لتحليله.\n"
         "💬 **تحدث معي** وأنا أتذكر سياق المحادثة.\n"
-        "🪄 **اطلب تحسين صورة** بقولك 'حسن الصورة'.\n\n"
-        "استمتع! 🚀", parse_mode=ParseMode.MARKDOWN)
+        "🪄 **اطلب تحسين صورة** بقولك 'حسن الصورة'.\n"
+        "🎨 **ارسم صورة** باستخدام الأمر:\n"
+        "`/draw وصف الصورة` أو `/تخيل وصف الصورة`\n\n"
+        "استمتع! 🚀",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def about(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
-    await update.message.reply_text(f"🤖 **{BOT_NAME}**\nمطور البوت: **{BOT_DEVELOPER}**\n\nإمكانياتي:\n• تحليل الصور والملفات\n• محادثة ذكية مع ذاكرة للسياق\n• تحليل الأكواد البرمجية\n• تحسين جودة الصور\n\nاستمتع! 💪", parse_mode=ParseMode.MARKDOWN)
+    if not await require_subscription(update, context):
+        return
+    await update.message.reply_text(
+        f"🤖 **{BOT_NAME}**\nمطور البوت: **{BOT_DEVELOPER}**\n\n"
+        "إمكانياتي:\n"
+        "• تحليل الصور والملفات\n"
+        "• محادثة ذكية مع ذاكرة للسياق\n"
+        "• تحليل الأكواد البرمجية\n"
+        "• تحسين جودة الصور\n"
+        "• رسم الصور باستخدام الذكاء الاصطناعي 🎨\n\n"
+        "استمتع! 💪",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def clear_history(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
+    if not await require_subscription(update, context):
+        return
     user_id = update.effective_user.id
     chat_manager.clear_history(user_id)
     await update.message.reply_text("🧹 تم مسح تاريخ المحادثة.")
 
-# --- معالجات الصور والتحسين (بدون تغيير) ---
+# --- أمر الرسم الجديد ---
+async def draw_command(update: Update, context: CallbackContext):
+    """معالج الأمر /draw"""
+    if not await require_subscription(update, context):
+        return
+    
+    # استخراج وصف الصورة من الأمر
+    if not context.args:
+        await update.message.reply_text(
+            "🎨 **استخدام أمر الرسم:**\n"
+            "`/draw وصف الصورة التي تريد رسمها`\n\n"
+            "**مثال:**\n"
+            "`/draw قطة ترتدي قبعة ساحر في غابة سحرية`\n\n"
+            "يمكنك أيضاً استخدام `/تخيل`.\n\n"
+            f"{get_available_models_text()}",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    prompt = " ".join(context.args)
+    user_id = update.effective_user.id
+    logger.info(f"🎨 طلب رسم من المستخدم {user_id}: {prompt[:100]}...")
+    
+    # إرسال رسالة انتظار
+    processing_msg = await update.message.reply_text(
+        "🎨 جاري رسم الصورة... قد يستغرق الأمر 10-30 ثانية.\n"
+        "*(نستخدم نموذج Flux للحصول على أفضل جودة)* ⏳"
+    )
+    
+    try:
+        # توليد الصورة
+        image_data = await generate_image(prompt, model="flux")
+        
+        if image_data is None:
+            await processing_msg.edit_text(
+                "❌ عذراً، فشل توليد الصورة. قد يكون الخادم مشغولاً.\n"
+                "حاول مرة أخرى بعد قليل."
+            )
+            return
+        
+        # إرسال الصورة
+        await update.message.reply_photo(
+            photo=image_data,
+            caption=f"🎨 **تم رسم الصورة!**\n📝 الوصف: `{prompt[:200]}`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        await processing_msg.delete()
+        
+        # حفظ في تاريخ المحادثة
+        chat_manager.add_message(user_id, "user", f"/draw {prompt}")
+        chat_manager.add_message(user_id, "assistant", "[تم رسم الصورة المطلوبة]")
+        
+    except Exception as e:
+        logger.error(f"❌ فشل رسم الصورة: {e}", exc_info=True)
+        await processing_msg.edit_text("❌ حدث خطأ غير متوقع أثناء رسم الصورة.")
+
+# --- معالج الصور (بدون تغيير) ---
 async def handle_photo(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
+    if not await require_subscription(update, context):
+        return
     user_id = update.effective_user.id
     user_last_photo[user_id] = update.message.photo[-1].file_id
     processing_msg = await update.message.reply_text("🔍 جاري تحليل الصورة...")
@@ -62,13 +145,18 @@ async def handle_photo(update: Update, context: CallbackContext):
     finally:
         if os.path.exists(photo_path): os.remove(photo_path)
 
+# --- معالج تحسين الصور (بدون تغيير) ---
 async def handle_enhance_request(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     reply_to_message = update.message.reply_to_message
     photo_to_enhance = None
-    if reply_to_message and reply_to_message.photo: photo_to_enhance = reply_to_message.photo[-1].file_id
-    elif user_id in user_last_photo: photo_to_enhance = user_last_photo[user_id]
-    else: await update.message.reply_text("🪄 أرسل صورة أولاً ثم اطلب تحسينها."); return
+    if reply_to_message and reply_to_message.photo:
+        photo_to_enhance = reply_to_message.photo[-1].file_id
+    elif user_id in user_last_photo:
+        photo_to_enhance = user_last_photo[user_id]
+    else:
+        await update.message.reply_text("🪄 أرسل صورة أولاً ثم اطلب تحسينها.")
+        return
     processing_msg = await update.message.reply_text("🪄 جاري تحسين الصورة بجودة أسطورية باستخدام DeepAI...")
     try:
         photo_file = await context.bot.get_file(photo_to_enhance)
@@ -76,8 +164,12 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
             photo_path = tmp.name
             await photo_file.download_to_drive(photo_path)
         enhanced_image = enhance_image_quality_legendary(photo_path)
-        await update.message.reply_document(document=enhanced_image, filename="Titan_AI_Enhanced.jpg",
-                                            caption="✨ **تم تحسين الصورة بجودة أسطورية!**", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_document(
+            document=enhanced_image,
+            filename="Titan_AI_Enhanced.jpg",
+            caption="✨ **تم تحسين الصورة بجودة أسطورية!**",
+            parse_mode=ParseMode.MARKDOWN
+        )
         await processing_msg.delete()
     except Exception as e:
         logger.error(f"❌ فشل تحسين الصورة: {e}", exc_info=True)
@@ -85,7 +177,7 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
     finally:
         if 'photo_path' in locals() and os.path.exists(photo_path): os.remove(photo_path)
 
-# --- معالج الملفات (معدل لدعم تحليل الأكواد) ---
+# --- معالج الملفات (بدون تغيير) ---
 async def handle_document(update: Update, context: CallbackContext):
     if not await require_subscription(update, context): return
     user_id = update.effective_user.id
@@ -101,7 +193,6 @@ async def handle_document(update: Update, context: CallbackContext):
             return
         if len(text) > 6000: text = text[:6000] + "... (تم اقتطاع النص)"
         
-        # --- استدعاء التحليل المناسب ---
         if is_code:
             await processing_msg.edit_text(f"💻 جاري تحليل الكود البرمجي (`{file_name}`)...", parse_mode=ParseMode.MARKDOWN)
             analysis = analyze_code(text, file_name)
@@ -131,8 +222,10 @@ async def handle_text(update: Update, context: CallbackContext):
         chat_manager.add_message(user_id, "user", user_message)
         chat_manager.add_message(user_id, "assistant", response)
         file_created = await handle_potential_file_creation(update, response)
-        if not file_created: await processing_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
-        else: await processing_msg.delete()
+        if not file_created:
+            await processing_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await processing_msg.delete()
     except Exception as e:
         logger.error(f"❌ فشل الرد: {e}", exc_info=True)
         await processing_msg.edit_text("❌ عذراً، حدث خطأ أثناء معالجة طلبك.")
@@ -168,6 +261,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("about", about))
     application.add_handler(CommandHandler("clear", clear_history))
+    application.add_handler(CommandHandler("draw", draw_command))
+    application.add_handler(CommandHandler("تخيل", draw_command))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="check_subscription"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
@@ -175,4 +270,5 @@ def main():
     logger.info(f"🤖 {BOT_NAME} قيد التشغيل...")
     application.run_polling()
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
