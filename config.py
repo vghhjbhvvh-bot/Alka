@@ -4,7 +4,12 @@ import sys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "meta-llama/llama-4-scout-17b-16e-instruct")
+# ... (بقية المتغيرات)
 
+# مفتاح Hugging Face API
+HF_API_KEY = os.getenv("HF_API_KEY")
+
+# ... (دالة التحقق)
 # مفتاح DeepAI API لتحسين الصور
 DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
 
