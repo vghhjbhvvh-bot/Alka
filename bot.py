@@ -23,12 +23,14 @@ persistence = PicklePersistence(filepath="bot_persistence.pkl")
 chat_manager = ChatHistoryManager(max_messages=20)
 user_last_photo = {}
 
-# --- دوال مساعدة للاشتراك (بدون تغيير) ---
+
+# --- دوال مساعدة للاشتراك ---
 async def require_subscription(update: Update, context: CallbackContext) -> bool:
     if await check_user_subscription(update, context, FORCE_SUBSCRIBE_CHANNEL_ID):
         return True
     await send_subscription_prompt(update, context, FORCE_SUBSCRIBE_CHANNEL_URL)
     return False
+
 
 # --- أوامر البداية والمسح ---
 async def start(update: Update, context: CallbackContext):
@@ -47,6 +49,7 @@ async def start(update: Update, context: CallbackContext):
         parse_mode=ParseMode.MARKDOWN
     )
 
+
 async def about(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -62,6 +65,7 @@ async def about(update: Update, context: CallbackContext):
         parse_mode=ParseMode.MARKDOWN
     )
 
+
 async def clear_history(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -69,13 +73,12 @@ async def clear_history(update: Update, context: CallbackContext):
     chat_manager.clear_history(user_id)
     await update.message.reply_text("🧹 تم مسح تاريخ المحادثة.")
 
-# --- أمر الرسم (draw فقط) ---
+
+# --- أمر الرسم ---
 async def draw_command(update: Update, context: CallbackContext):
-    """معالج الأمر /draw"""
     if not await require_subscription(update, context):
         return
-    
-    # استخراج وصف الصورة من الأمر
+
     if not context.args:
         await update.message.reply_text(
             "🎨 **استخدام أمر الرسم:**\n"
@@ -87,68 +90,50 @@ async def draw_command(update: Update, context: CallbackContext):
             parse_mode=ParseMode.MARKDOWN
         )
         return
-    
+
     prompt = " ".join(context.args)
     user_id = update.effective_user.id
     logger.info(f"🎨 طلب رسم من المستخدم {user_id}: {prompt[:100]}...")
-    
-    # إرسال رسالة انتظار
+
     processing_msg = await update.message.reply_text(
         "🎨 جاري رسم الصورة... قد يستغرق الأمر 10-30 ثانية.\n"
-        "*(نستخدم نموذج Flux للحصول على أفضل جودة)* ⏳"
+        "*(نستخدم Hugging Face API)* ⏳"
     )
-    
+
     try:
-        # توليد الصورة
-        try:
-    image_data = await generate_image(prompt)
-    
-    if image_data is None:
-        await processing_msg.edit_text(
-            "❌ **فشل توليد الصورة**\n\n"
-            "الأسباب المحتملة:\n"
-            "• مفتاح Hugging Face API غير صحيح أو منتهي الصلاحية.\n"
-            "• تجاوزت الحد المجاني (جرب لاحقاً).\n"
-            "• النموذج غير متاح حالياً.\n\n"
-            "🔧 *يرجى إبلاغ المطور لفحص السجلات.*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-    
-    await update.message.reply_photo(
-        photo=image_data,
-        caption=f"🎨 **تم رسم الصورة!**\n📝 الوصف: `{prompt[:200]}`",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    await processing_msg.delete()
-    
-    chat_manager.add_message(user_id, "user", f"/draw {prompt}")
-    chat_manager.add_message(user_id, "assistant", "[تم رسم الصورة المطلوبة]")
-    
-except Exception as e:
-    logger.error(f"❌ فشل رسم الصورة: {type(e).__name__} - {e}", exc_info=True)
-    await processing_msg.edit_text(
-        f"❌ **حدث خطأ تقني:** `{type(e).__name__}`\n\n"
-        "تم تسجيل الخطأ. يرجى المحاولة لاحقاً."
-    )
-        
-        # إرسال الصورة
+        image_data = await generate_image(prompt)
+
+        if image_data is None:
+            await processing_msg.edit_text(
+                "❌ **فشل توليد الصورة**\n\n"
+                "الأسباب المحتملة:\n"
+                "• مفتاح Hugging Face API غير صحيح أو منتهي الصلاحية.\n"
+                "• تجاوزت الحد المجاني (جرب لاحقاً).\n"
+                "• النموذج غير متاح حالياً.\n\n"
+                "🔧 *يرجى إبلاغ المطور لفحص السجلات.*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
         await update.message.reply_photo(
             photo=image_data,
             caption=f"🎨 **تم رسم الصورة!**\n📝 الوصف: `{prompt[:200]}`",
             parse_mode=ParseMode.MARKDOWN
         )
         await processing_msg.delete()
-        
-        # حفظ في تاريخ المحادثة
+
         chat_manager.add_message(user_id, "user", f"/draw {prompt}")
         chat_manager.add_message(user_id, "assistant", "[تم رسم الصورة المطلوبة]")
-        
-    except Exception as e:
-        logger.error(f"❌ فشل رسم الصورة: {e}", exc_info=True)
-        await processing_msg.edit_text("❌ حدث خطأ غير متوقع أثناء رسم الصورة.")
 
-# --- باقي المعالجات كما هي بدون تغيير ---
+    except Exception as e:
+        logger.error(f"❌ فشل رسم الصورة: {type(e).__name__} - {e}", exc_info=True)
+        await processing_msg.edit_text(
+            f"❌ **حدث خطأ تقني:** `{type(e).__name__}`\n\n"
+            "تم تسجيل الخطأ. يرجى المحاولة لاحقاً."
+        )
+
+
+# --- معالج الصور ---
 async def handle_photo(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -166,8 +151,11 @@ async def handle_photo(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل تحليل الصورة: {e}", exc_info=True)
         await processing_msg.edit_text("❌ عذراً، حدث خطأ أثناء تحليل الصورة.")
     finally:
-        if os.path.exists(photo_path): os.remove(photo_path)
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
 
+
+# --- معالج تحسين الصور ---
 async def handle_enhance_request(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     reply_to_message = update.message.reply_to_message
@@ -197,10 +185,14 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل تحسين الصورة: {e}", exc_info=True)
         await processing_msg.edit_text("❌ حدث خطأ أثناء تحسين الصورة.")
     finally:
-        if 'photo_path' in locals() and os.path.exists(photo_path): os.remove(photo_path)
+        if 'photo_path' in locals() and os.path.exists(photo_path):
+            os.remove(photo_path)
 
+
+# --- معالج الملفات ---
 async def handle_document(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
+    if not await require_subscription(update, context):
+        return
     user_id = update.effective_user.id
     document = update.message.document
     file_name = document.file_name or "unknown"
@@ -212,8 +204,9 @@ async def handle_document(update: Update, context: CallbackContext):
         if text is None:
             await processing_msg.edit_text("❌ لم نتمكن من قراءة الملف. تأكد من صيغة مدعومة.")
             return
-        if len(text) > 6000: text = text[:6000] + "... (تم اقتطاع النص)"
-        
+        if len(text) > 6000:
+            text = text[:6000] + "... (تم اقتطاع النص)"
+
         if is_code:
             await processing_msg.edit_text(f"💻 جاري تحليل الكود البرمجي (`{file_name}`)...", parse_mode=ParseMode.MARKDOWN)
             analysis = analyze_code(text, file_name)
@@ -221,20 +214,24 @@ async def handle_document(update: Update, context: CallbackContext):
         else:
             analysis = analyze_document(text)
             chat_manager.add_message(user_id, "user", f"[ملف: {file_name}]\n{text[:500]}")
-            
+
         chat_manager.add_message(user_id, "assistant", analysis)
         await processing_msg.edit_text(f"📑 **تحليل الملف:**\n\n{analysis}", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         logger.error(f"❌ فشل معالجة الملف: {e}", exc_info=True)
         await processing_msg.edit_text("❌ حدث خطأ أثناء معالجة الملف.")
 
+
+# --- معالج النصوص والمحادثة ---
 async def handle_text(update: Update, context: CallbackContext):
-    if not await require_subscription(update, context): return
+    if not await require_subscription(update, context):
+        return
     user_id = update.effective_user.id
     user_message = update.message.text.strip()
     enhance_keywords = ["حسن الصورة", "حسن هذه الصورة", "تحسين الصورة", "تحسين جودة الصورة"]
     if any(kw in user_message.lower() for kw in enhance_keywords):
-        await handle_enhance_request(update, context); return
+        await handle_enhance_request(update, context)
+        return
     processing_msg = await update.message.reply_text("💬 جاري التفكير...")
     try:
         history = chat_manager.get_history(user_id)
@@ -250,44 +247,53 @@ async def handle_text(update: Update, context: CallbackContext):
         logger.error(f"❌ فشل الرد: {e}", exc_info=True)
         await processing_msg.edit_text("❌ عذراً، حدث خطأ أثناء معالجة طلبك.")
 
+
 async def handle_potential_file_creation(update: Update, response: str) -> bool:
     code_block_pattern = r"```(\w+)?\n(.*?)```"
     matches = re.findall(code_block_pattern, response, re.DOTALL)
-    if not matches: return False
+    if not matches:
+        return False
     for i, (lang, code) in enumerate(matches):
-        if not code.strip(): continue
+        if not code.strip():
+            continue
         file_extension = f".{lang}" if lang else ".txt"
         filename = f"Titan_AI_generated_{i}{file_extension}"
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=file_extension, encoding='utf-8') as tmp:
-            tmp.write(code.strip()); tmp_path = tmp.name
+            tmp.write(code.strip())
+            tmp_path = tmp.name
         try:
             with open(tmp_path, 'rb') as f:
                 await update.message.reply_document(document=f, filename=filename, caption=f"📄 ملف من {BOT_NAME}")
         finally:
-            if os.path.exists(tmp_path): os.remove(tmp_path)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
     text_response = re.sub(code_block_pattern, '', response, flags=re.DOTALL).strip()
-    if text_response: await update.message.reply_text(text_response, parse_mode=ParseMode.MARKDOWN)
+    if text_response:
+        await update.message.reply_text(text_response, parse_mode=ParseMode.MARKDOWN)
     return True
+
 
 async def button_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     if query.data == "check_subscription":
         await subscription_button_callback(update, context, FORCE_SUBSCRIBE_CHANNEL_ID, FORCE_SUBSCRIBE_CHANNEL_URL)
 
+
 def main():
-    if not TELEGRAM_BOT_TOKEN: raise ValueError("❌ TELEGRAM_BOT_TOKEN غير موجود")
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("❌ TELEGRAM_BOT_TOKEN غير موجود")
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("about", about))
     application.add_handler(CommandHandler("clear", clear_history))
     application.add_handler(CommandHandler("draw", draw_command))
-    # تم إزالة السطر الذي كان يسبب الخطأ: application.add_handler(CommandHandler("تخيل", draw_command))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="check_subscription"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     logger.info(f"🤖 {BOT_NAME} قيد التشغيل...")
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
