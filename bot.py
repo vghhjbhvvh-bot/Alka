@@ -14,7 +14,7 @@ from image_processor import enhance_image_quality_legendary
 from subscription import check_user_subscription, send_subscription_prompt, subscription_button_callback
 from persistence import ChatHistoryManager
 from file_handler import extract_text_from_file
-from image_generator import generate_image, get_available_models_text
+from image_generator import generate_image
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,8 +43,8 @@ async def start(update: Update, context: CallbackContext):
         "📄 **أرسل ملفاً** (TXT, PDF, DOCX, كود) لتحليله.\n"
         "💬 **تحدث معي** وأنا أتذكر سياق المحادثة.\n"
         "🪄 **اطلب تحسين صورة** بقولك 'حسن الصورة'.\n"
-        "🎨 **ارسم صورة** باستخدام الأمر:\n"
-        "`/draw وصف الصورة بالعربية أو الإنجليزية`\n\n"
+        "🎨 **ارسم صورة** بمجرد قولك 'ارسم لي' ثم الوصف.\n"
+        "مثال: *ارسم لي قطة ترتدي قبعة ساحر*\n\n"
         "استمتع! 🚀",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -60,7 +60,7 @@ async def about(update: Update, context: CallbackContext):
         "• محادثة ذكية مع ذاكرة للسياق\n"
         "• تحليل الأكواد البرمجية\n"
         "• تحسين جودة الصور\n"
-        "• رسم الصور باستخدام الذكاء الاصطناعي 🎨\n\n"
+        "• رسم الصور بالذكاء الاصطناعي 🎨\n\n"
         "استمتع! 💪",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -74,7 +74,7 @@ async def clear_history(update: Update, context: CallbackContext):
     await update.message.reply_text("🧹 تم مسح تاريخ المحادثة.")
 
 
-# --- أمر الرسم ---
+# --- أمر الرسم (اختياري، لكن المحادثة الطبيعية تكفي) ---
 async def draw_command(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
@@ -84,20 +84,24 @@ async def draw_command(update: Update, context: CallbackContext):
             "🎨 **استخدام أمر الرسم:**\n"
             "`/draw وصف الصورة التي تريد رسمها`\n\n"
             "**مثال:**\n"
-            "`/draw قطة ترتدي قبعة ساحر في غابة سحرية`\n"
-            "`/draw a cute cat wearing a wizard hat`\n\n"
-            f"{get_available_models_text()}",
+            "`/draw قطة ترتدي قبعة ساحر`\n\n"
+            "💡 يمكنك أيضاً قول 'ارسم لي' متبوعاً بالوصف بدون أمر.",
             parse_mode=ParseMode.MARKDOWN
         )
         return
 
     prompt = " ".join(context.args)
+    await process_draw_request(update, context, prompt)
+
+
+# --- دالة معالجة طلب الرسم (تستخدم من الأمر والمحادثة) ---
+async def process_draw_request(update: Update, context: CallbackContext, prompt: str):
+    """معالجة طلب الرسم وإرسال الصورة."""
     user_id = update.effective_user.id
     logger.info(f"🎨 طلب رسم من المستخدم {user_id}: {prompt[:100]}...")
 
     processing_msg = await update.message.reply_text(
-        "🎨 جاري رسم الصورة... قد يستغرق الأمر 10-30 ثانية.\n"
-        "*(نستخدم Hugging Face API)* ⏳"
+        "🎨 جاري رسم الصورة... قد يستغرق الأمر بضع ثوانٍ ⏳"
     )
 
     try:
@@ -106,12 +110,7 @@ async def draw_command(update: Update, context: CallbackContext):
         if image_data is None:
             await processing_msg.edit_text(
                 "❌ **فشل توليد الصورة**\n\n"
-                "الأسباب المحتملة:\n"
-                "• مفتاح Hugging Face API غير صحيح أو منتهي الصلاحية.\n"
-                "• تجاوزت الحد المجاني (جرب لاحقاً).\n"
-                "• النموذج غير متاح حالياً.\n\n"
-                "🔧 *يرجى إبلاغ المطور لفحص السجلات.*",
-                parse_mode=ParseMode.MARKDOWN
+                "حدث خطأ أثناء محاولة الرسم. يرجى المحاولة لاحقاً أو استخدام وصف مختلف."
             )
             return
 
@@ -122,15 +121,12 @@ async def draw_command(update: Update, context: CallbackContext):
         )
         await processing_msg.delete()
 
-        chat_manager.add_message(user_id, "user", f"/draw {prompt}")
+        chat_manager.add_message(user_id, "user", f"ارسم لي: {prompt}")
         chat_manager.add_message(user_id, "assistant", "[تم رسم الصورة المطلوبة]")
 
     except Exception as e:
         logger.error(f"❌ فشل رسم الصورة: {type(e).__name__} - {e}", exc_info=True)
-        await processing_msg.edit_text(
-            f"❌ **حدث خطأ تقني:** `{type(e).__name__}`\n\n"
-            "تم تسجيل الخطأ. يرجى المحاولة لاحقاً."
-        )
+        await processing_msg.edit_text("❌ حدث خطأ غير متوقع أثناء رسم الصورة.")
 
 
 # --- معالج الصور ---
@@ -167,7 +163,7 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("🪄 أرسل صورة أولاً ثم اطلب تحسينها.")
         return
-    processing_msg = await update.message.reply_text("🪄 جاري تحسين الصورة بجودة أسطورية باستخدام DeepAI...")
+    processing_msg = await update.message.reply_text("🪄 جاري تحسين الصورة بجودة أسطورية...")
     try:
         photo_file = await context.bot.get_file(photo_to_enhance)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
@@ -176,8 +172,8 @@ async def handle_enhance_request(update: Update, context: CallbackContext):
         enhanced_image = enhance_image_quality_legendary(photo_path)
         await update.message.reply_document(
             document=enhanced_image,
-            filename="Titan_AI_Enhanced.jpg",
-            caption="✨ **تم تحسين الصورة بجودة أسطورية!**",
+            filename="Titan_Enhanced.jpg",
+            caption="✨ **تم تحسين الصورة بنجاح!**",
             parse_mode=ParseMode.MARKDOWN
         )
         await processing_msg.delete()
@@ -222,16 +218,48 @@ async def handle_document(update: Update, context: CallbackContext):
         await processing_msg.edit_text("❌ حدث خطأ أثناء معالجة الملف.")
 
 
-# --- معالج النصوص والمحادثة ---
+# --- معالج النصوص والمحادثة (مع دعم الرسم الطبيعي) ---
 async def handle_text(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
+
     user_id = update.effective_user.id
     user_message = update.message.text.strip()
+
+    # 1. التحقق من طلب تحسين صورة
     enhance_keywords = ["حسن الصورة", "حسن هذه الصورة", "تحسين الصورة", "تحسين جودة الصورة"]
     if any(kw in user_message.lower() for kw in enhance_keywords):
         await handle_enhance_request(update, context)
         return
+
+    # 2. التحقق من طلب رسم صورة (محادثة طبيعية)
+    draw_keywords = ["ارسم", "ارسم لي", "رسم", "صمم", "تخيل", "draw", "ارسملي", "ارسمي"]
+    message_lower = user_message.lower()
+    
+    for keyword in draw_keywords:
+        if message_lower.startswith(keyword) or keyword in message_lower:
+            # استخراج الوصف بعد الكلمة المفتاحية
+            prompt = user_message
+            for kw in draw_keywords:
+                # إزالة الكلمة المفتاحية من البداية أو من النص
+                if prompt.lower().startswith(kw):
+                    prompt = prompt[len(kw):].strip()
+                    break
+                elif kw in prompt.lower():
+                    # إذا كانت الكلمة في المنتصف، نأخذ النص بعدها
+                    parts = re.split(rf'\b{kw}\b', prompt, flags=re.IGNORECASE, maxsplit=1)
+                    if len(parts) > 1:
+                        prompt = parts[1].strip()
+                        break
+            
+            if prompt:
+                await process_draw_request(update, context, prompt)
+                return
+            else:
+                await update.message.reply_text("🎨 ماذا تريد أن أرسم؟ اكتب وصفاً بعد 'ارسم'.")
+                return
+
+    # 3. محادثة عادية مع الذكاء الاصطناعي
     processing_msg = await update.message.reply_text("💬 جاري التفكير...")
     try:
         history = chat_manager.get_history(user_id)
@@ -257,7 +285,7 @@ async def handle_potential_file_creation(update: Update, response: str) -> bool:
         if not code.strip():
             continue
         file_extension = f".{lang}" if lang else ".txt"
-        filename = f"Titan_AI_generated_{i}{file_extension}"
+        filename = f"Titan_generated_{i}{file_extension}"
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=file_extension, encoding='utf-8') as tmp:
             tmp.write(code.strip())
             tmp_path = tmp.name
