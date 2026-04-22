@@ -8,6 +8,9 @@ GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "meta-llama/llama-4-scout-17b-16e
 # مفتاح DeepAI API لتحسين الصور
 DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
 
+# مفتاح Pollinations API (اختياري)
+POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY")
+
 BOT_NAME = "Titan AI"
 BOT_DEVELOPER = "Cryptonblox"
 
