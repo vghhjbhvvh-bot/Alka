@@ -100,14 +100,37 @@ async def draw_command(update: Update, context: CallbackContext):
     
     try:
         # توليد الصورة
-        image_data = await generate_image(prompt, model="flux")
-        
-        if image_data is None:
-            await processing_msg.edit_text(
-                "❌ عذراً، فشل توليد الصورة. قد يكون الخادم مشغولاً.\n"
-                "حاول مرة أخرى بعد قليل."
-            )
-            return
+        try:
+    image_data = await generate_image(prompt)
+    
+    if image_data is None:
+        await processing_msg.edit_text(
+            "❌ **فشل توليد الصورة**\n\n"
+            "الأسباب المحتملة:\n"
+            "• مفتاح Hugging Face API غير صحيح أو منتهي الصلاحية.\n"
+            "• تجاوزت الحد المجاني (جرب لاحقاً).\n"
+            "• النموذج غير متاح حالياً.\n\n"
+            "🔧 *يرجى إبلاغ المطور لفحص السجلات.*",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    await update.message.reply_photo(
+        photo=image_data,
+        caption=f"🎨 **تم رسم الصورة!**\n📝 الوصف: `{prompt[:200]}`",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    await processing_msg.delete()
+    
+    chat_manager.add_message(user_id, "user", f"/draw {prompt}")
+    chat_manager.add_message(user_id, "assistant", "[تم رسم الصورة المطلوبة]")
+    
+except Exception as e:
+    logger.error(f"❌ فشل رسم الصورة: {type(e).__name__} - {e}", exc_info=True)
+    await processing_msg.edit_text(
+        f"❌ **حدث خطأ تقني:** `{type(e).__name__}`\n\n"
+        "تم تسجيل الخطأ. يرجى المحاولة لاحقاً."
+    )
         
         # إرسال الصورة
         await update.message.reply_photo(
