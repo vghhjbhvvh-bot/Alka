@@ -16,6 +16,9 @@ from persistence import ChatHistoryManager
 from file_handler import extract_text_from_file
 from image_generator import generate_image
 from groq_service import enhance_image_prompt
+from rate_limiter import RateLimiter
+from cache_manager import CacheManager
+from advanced_features import classify_image_content, generate_image_description_detailed, detect_image_quality, extract_text_from_image
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +26,8 @@ logger = logging.getLogger(__name__)
 persistence = PicklePersistence(filepath="bot_persistence.pkl")
 chat_manager = ChatHistoryManager(max_messages=20)
 user_last_photo = {}
+rate_limiter = RateLimiter(max_requests=20, time_window=60)  # 20 طلب في الدقيقة
+cache_manager = CacheManager(max_size=100, ttl=3600)  # ساعة واحدة
 
 
 # --- دوال مساعدة للاشتراك ---
@@ -50,6 +55,20 @@ async def start(update: Update, context: CallbackContext):
         parse_mode=ParseMode.MARKDOWN
     )
 
+
+async def features(update: Update, context: CallbackContext):
+    """عرض الميزات المتقدمة المتاحة."""
+    if not await require_subscription(update, context):
+        return
+    await update.message.reply_text(
+        f"🚀 **الميزات المتقدمة في {BOT_NAME}:**\n\n"
+        "📊 **تصنيف الصور**: اكتب 'صنف الصورة' لتصنيف محتوى الصورة تلقائياً.\n"
+        "📝 **استخراج النصوص**: اكتب 'استخرج النصوص' لاستخراج أي نصوص من الصورة.\n"
+        "⭐ **تقييم الجودة**: اكتب 'قيّم الصورة' لتقييم جودة الصورة.\n"
+        "📖 **وصف مفصل**: اكتب 'صف الصورة' للحصول على وصف تفصيلي.\n\n"
+        "استمتع بالميزات الجديدة! 🎉",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def about(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
@@ -138,6 +157,16 @@ async def handle_photo(update: Update, context: CallbackContext):
     if not await require_subscription(update, context):
         return
     user_id = update.effective_user.id
+    
+    # فحص معدل الطلبات
+    if not rate_limiter.is_allowed(user_id):
+        remaining_time = int(rate_limiter.get_reset_time(user_id))
+        await update.message.reply_text(
+            f"⏱️ **تم تجاوز حد الطلبات**\n\n"
+            f"يرجى الانتظار {remaining_time} ثانية قبل إرسال طلب جديد.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
     user_last_photo[user_id] = update.message.photo[-1].file_id
     processing_msg = await update.message.reply_text("🔍 جاري تحليل الصورة...")
     photo_file = await update.message.photo[-1].get_file()
@@ -228,9 +257,50 @@ async def handle_text(update: Update, context: CallbackContext):
         return
 
     user_id = update.effective_user.id
+    
+    # فحص معدل الطلبات
+    if not rate_limiter.is_allowed(user_id):
+        remaining_time = int(rate_limiter.get_reset_time(user_id))
+        await update.message.reply_text(
+            f"⏱️ **تم تجاوز حد الطلبات**\n\n"
+            f"يرجى الانتظار {remaining_time} ثانية قبل إرسال طلب جديد.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
     user_message = update.message.text.strip()
 
-    # 1. التحقق من طلب تحسين صورة
+    # 1. التحقق من الميزات المتقدمة
+    advanced_keywords = {
+        ("صنف الصورة", "تصنيف"): classify_image_content,
+        ("استخرج النصوص", "استخراج النص"): extract_text_from_image,
+        ("قيّم الصورة", "تقييم الجودة"): detect_image_quality,
+        ("صف الصورة", "وصف مفصل"): generate_image_description_detailed,
+    }
+    
+    for keywords, feature_func in advanced_keywords.items():
+        if any(kw.lower() in user_message.lower() for kw in keywords):
+            if user_id not in user_last_photo:
+                await update.message.reply_text("📋 أرسل صورة أولاً ثم جرب مجدداً.")
+                return
+            
+            processing_msg = await update.message.reply_text("🔍 جاري معالجة الصورة...")
+            try:
+                photo_file = await context.bot.get_file(user_last_photo[user_id])
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    photo_path = tmp.name
+                    await photo_file.download_to_drive(photo_path)
+                
+                result = feature_func(photo_path)
+                await processing_msg.edit_text(result, parse_mode=ParseMode.MARKDOWN)
+                
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)
+            except Exception as e:
+                logger.error(f"❌ فشل معالجة الميزة: {e}", exc_info=True)
+                await processing_msg.edit_text("❌ حدث خطأ أثناء معالجة الطلب.")
+            return
+    
+    # 2. التحقق من طلب تحسين صورة
     enhance_keywords = ["حسن الصورة", "حسن هذه الصورة", "تحسين الصورة", "تحسين جودة الصورة"]
     if any(kw in user_message.lower() for kw in enhance_keywords):
         await handle_enhance_request(update, context)
@@ -317,6 +387,7 @@ def main():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("about", about))
+    application.add_handler(CommandHandler("features", features))
     application.add_handler(CommandHandler("clear", clear_history))
     application.add_handler(CommandHandler("draw", draw_command))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="check_subscription"))
