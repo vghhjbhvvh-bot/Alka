@@ -13,6 +13,7 @@ HF_API_KEY = os.getenv("HF_API_KEY")
 # مفتاح DeepAI API لتحسين الصور
 DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
 
+FAL_AI_API_KEY = os.getenv("FAL_AI_API_KEY")
 # مفتاح Pollinations API (اختياري)
 POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY")
 
@@ -30,6 +31,8 @@ def validate_config():
         errors.append("GROQ_API_KEY غير موجود في متغيرات البيئة")
     if not DEEPAI_API_KEY:
         errors.append("DEEPAI_API_KEY غير موجود في متغيرات البيئة. احصل عليه مجاناً من deepai.org")
+    if not FAL_AI_API_KEY:
+        errors.append("FAL_AI_API_KEY غير موجود في متغيرات البيئة. يرجى توفيره لتحسين جودة توليد الصور.")
     if errors:
         print("❌ أخطاء في الإعدادات:")
         for err in errors:

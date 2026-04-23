@@ -65,6 +65,28 @@ def analyze_code(code: str, file_name: str = "", user_question: str = "") -> str
         raise RuntimeError(f"فشل تحليل الكود: {e}")
 
 # --- تحليل المستندات النصية العامة (بدون تغيير) ---
+def enhance_image_prompt(user_prompt: str) -> str:
+    if client is None: raise RuntimeError("عميل Groq غير مهيأ.")
+    system_prompt = (
+        "أنت خبير في هندسة المطالبات (Prompt Engineering) لتوليد الصور بالذكاء الاصطناعي. "
+        "مهمتك هي تحويل المطالبات البسيطة أو القصيرة التي يقدمها المستخدم إلى مطالبات مفصلة وغنية "
+        "بالتفاصيل، مع التركيز على الجودة الفنية والجمالية. أضف تفاصيل حول الأسلوب الفني، الإضاءة، "
+        "التكوين، الألوان، والمزاج العام للصورة. اجعل المطالبة باللغة الإنجليزية لضمان أفضل النتائج "
+        "مع نماذج توليد الصور. لا تضف أي شرح إضافي، فقط المطالبة المحسنة."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"المطالبة الأصلية: {user_prompt}\n\nالمطالبة المحسنة:"}
+    ]
+    try:
+        chat_completion = client.chat.completions.create(
+            model=GROQ_MODEL_NAME, messages=messages, temperature=0.9, max_tokens=500
+        )
+        return chat_completion.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"❌ فشل تحسين المطالبة: {e}")
+        return user_prompt # العودة إلى المطالبة الأصلية في حالة الفشل
+
 def analyze_document(document_text: str, user_question: str = None) -> str:
     if client is None: raise RuntimeError("عميل Groq غير مهيأ.")
     if user_question:

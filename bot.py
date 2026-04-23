@@ -15,6 +15,7 @@ from subscription import check_user_subscription, send_subscription_prompt, subs
 from persistence import ChatHistoryManager
 from file_handler import extract_text_from_file
 from image_generator import generate_image
+from groq_service import enhance_image_prompt
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -105,7 +106,10 @@ async def process_draw_request(update: Update, context: CallbackContext, prompt:
     )
 
     try:
-        image_data = await generate_image(prompt)
+        # تحسين المطالبة باستخدام الذكاء الاصطناعي قبل توليد الصورة
+        enhanced_prompt = await enhance_image_prompt(prompt)
+        logger.info(f"🎨 المطالبة المحسنة: {enhanced_prompt[:100]}...")
+        image_data = await generate_image(enhanced_prompt)
 
         if image_data is None:
             await processing_msg.edit_text(
