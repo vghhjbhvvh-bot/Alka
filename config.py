@@ -1,26 +1,25 @@
 import os
 import sys
+from dotenv import load_dotenv
 
+# تحميل متغيرات البيئة من ملف .env إذا وجد
+load_dotenv()
+
+# التوكنات الأساسية
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "meta-llama/llama-4-scout-17b-16e-instruct")
-# ... (بقية المتغيرات)
+# استخدام نموذج قوي من Groq
+GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
 
-# مفتاح Hugging Face API
+# مفتاح Hugging Face API للرسم (الخيار الأساسي والوحيد حالياً)
 HF_API_KEY = os.getenv("HF_API_KEY")
 
-# ... (دالة التحقق)
-# مفتاح DeepAI API لتحسين الصور
-DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
-
-FAL_AI_API_KEY = os.getenv("FAL_AI_API_KEY")
-# مفتاح Pollinations API (اختياري)
-POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY")
-
+# إعدادات البوت
 BOT_NAME = "Titan AI"
 BOT_DEVELOPER = "Cryptonblox"
 
-FORCE_SUBSCRIBE_CHANNEL_ID = "-1003916904381"
+# إعدادات الاشتراك الإجباري
+FORCE_SUBSCRIBE_CHANNEL_ID = os.getenv("CHANNEL_ID", "-1003916904381")
 FORCE_SUBSCRIBE_CHANNEL_URL = os.getenv("CHANNEL_URL", "https://t.me/+8pspvZiZ6rwyNWZi")
 
 def validate_config():
@@ -29,14 +28,16 @@ def validate_config():
         errors.append("TELEGRAM_BOT_TOKEN غير موجود في متغيرات البيئة")
     if not GROQ_API_KEY:
         errors.append("GROQ_API_KEY غير موجود في متغيرات البيئة")
-    if not DEEPAI_API_KEY:
-        errors.append("DEEPAI_API_KEY غير موجود في متغيرات البيئة. احصل عليه مجاناً من deepai.org")
-    if not FAL_AI_API_KEY:
-        errors.append("FAL_AI_API_KEY غير موجود في متغيرات البيئة. يرجى توفيره لتحسين جودة توليد الصور.")
+    if not HF_API_KEY:
+        errors.append("HF_API_KEY غير موجود. يرجى توفيره لاستخدام ميزة الرسم عبر Hugging Face")
+    
     if errors:
         print("❌ أخطاء في الإعدادات:")
         for err in errors:
             print(f"   - {err}")
-        sys.exit(1)
+        # في بيئة التطوير قد لا نرغب في إيقاف البرنامج فوراً
+        # sys.exit(1)
+        return False
+    return True
 
 validate_config()
