@@ -1,16 +1,14 @@
 import logging
 from collections import deque
 from typing import List, Dict, Any
+from telegram.ext import PicklePersistence
 
 logger = logging.getLogger(__name__)
 
 class ChatHistoryManager:
     """إدارة تاريخ المحادثة لكل مستخدم مع حد أقصى لعدد الرسائل."""
-
     def __init__(self, max_messages: int = 20):
         self.max_messages = max_messages
-        # في الإنتاج، يمكن استخدام pickle persistence، لكننا نستخدم قاموساً بسيطاً للتوضيح
-        # سيكون التخزين في context.user_data باستخدام python-telegram-bot persistence
         self._storage: Dict[int, deque] = {}
 
     def add_message(self, user_id: int, role: str, content: str):
@@ -37,5 +35,8 @@ class ChatHistoryManager:
         تقليم التاريخ بناءً على تقدير عدد الرموز.
         (تطبيق بسيط: يحتفظ بعدد max_messages فقط)
         """
-        # تطبيق بسيط: نعتمد على maxlen المحدد مسبقاً
         pass
+
+# تهيئة Persistence و ChatHistoryManager
+persistence = PicklePersistence(filepath="bot_data.pickle")
+chat_manager = ChatHistoryManager()

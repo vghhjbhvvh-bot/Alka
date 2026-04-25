@@ -20,13 +20,13 @@ from groq_service import (
 )
 from image_generator import generate_image
 from file_handler import extract_text_from_file
-from persistence import persistence, chat_manager
+from persistence import persistence, chat_manager # تم التأكد من الاستيراد الصحيح
 from rate_limiter import RateLimiter
 from subscription import check_user_subscription, send_subscription_prompt, subscription_button_callback
 
 # إعداد السجلات
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -202,10 +202,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "```" in response:
             code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", response, re.DOTALL)
             if code_blocks and len(code_blocks[0]) > 1000:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".py") as tmp:
+                with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py") as tmp:
                     tmp.write(code_blocks[0])
                     tmp_path = tmp.name
-                with open(tmp_path, 'rb') as f:
+                with open(tmp_path, "rb") as f:
                     await update.message.reply_document(document=f, filename="code_solution.py", caption="📄 إليك الكود البرمجي في ملف لسهولة الاستخدام.")
                 os.unlink(tmp_path)
 
