@@ -8,9 +8,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # استخدام نماذج قوية من Hugging Face
-# FLUX.1-schnell هو نموذج قوي جداً وسريع
 HF_API_URL_PRIMARY = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-# نماذج احتياطية قوية
 HF_API_URL_SECONDARY = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 HF_API_URL_TERTIARY = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 
@@ -20,13 +18,13 @@ async def _generate_hf(api_url: str, prompt: str) -> Optional[io.BytesIO]:
         return None
         
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    
+    # تصحيح الـ payload ليتناسب مع متطلبات Hugging Face Inference API
     payload = {
         "inputs": prompt,
         "parameters": {
             "guidance_scale": 7.5,
-            "num_inference_steps": 50,
-            "width": 1024,
-            "height": 1024
+            "num_inference_steps": 25, # تقليل الخطوات لسرعة الاستجابة في الاستدلال المجاني
         }
     }
     
@@ -35,7 +33,12 @@ async def _generate_hf(api_url: str, prompt: str) -> Optional[io.BytesIO]:
             async with session.post(api_url, headers=headers, json=payload,
                                     timeout=aiohttp.ClientTimeout(total=120)) as response:
                 if response.status == 200:
-                    return io.BytesIO(await response.read())
+                    content = await response.read()
+                    # التحقق من أن المحتوى هو صورة وليس خطأ JSON
+                    if content.startswith(b'{'):
+                        logger.error(f"❌ استجابة HF ليست صورة: {content.decode('utf-8', errors='ignore')}")
+                        return None
+                    return io.BytesIO(content)
                 elif response.status == 503:
                     # النموذج قيد التحميل، انتظر قليلاً وأعد المحاولة
                     logger.warning(f"⚠️ النموذج {api_url.split('/')[-1]} قيد التحميل، جاري الانتظار...")
@@ -43,9 +46,12 @@ async def _generate_hf(api_url: str, prompt: str) -> Optional[io.BytesIO]:
                     async with session.post(api_url, headers=headers, json=payload,
                                             timeout=aiohttp.ClientTimeout(total=90)) as retry:
                         if retry.status == 200:
-                            return io.BytesIO(await retry.read())
+                            content = await retry.read()
+                            if not content.startswith(b'{'):
+                                return io.BytesIO(content)
                 
-                logger.error(f"❌ خطأ في استجابة HF ({api_url.split('/')[-1]}): {response.status}")
+                error_text = await response.text()
+                logger.error(f"❌ خطأ في استجابة HF ({api_url.split('/')[-1]}): {response.status} - {error_text}")
                 return None
     except Exception as e:
         logger.error(f"❌ خطأ استثناء HF: {type(e).__name__} - {e}")

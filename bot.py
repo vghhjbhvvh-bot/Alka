@@ -20,7 +20,7 @@ from groq_service import (
 )
 from image_generator import generate_image
 from file_handler import extract_text_from_file
-from persistence import ChatHistoryManager # استيراد الفئة فقط
+from persistence import ChatHistoryManager
 from rate_limiter import RateLimiter
 from subscription import check_user_subscription, send_subscription_prompt, subscription_button_callback
 
@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# تهيئة Persistence و ChatHistoryManager داخلياً لتجنب مشاكل الاستيراد
+# تهيئة Persistence و ChatHistoryManager
 bot_persistence = PicklePersistence(filepath="bot_data.pickle")
 chat_manager = ChatHistoryManager()
 
@@ -42,12 +42,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 أهلاً بك {user.first_name} في {BOT_NAME}!\n\n"
         f"أنا مساعدك الذكي المطور بواسطة {BOT_DEVELOPER}. "
-        "أتميز بقدرات خارقة في البرمجة، تحليل الملفات (PDF, DOCX, Code)، وتوليد الصور الاحترافية.\n\n"
+        "أتميز بقدرات متطورة في البرمجة، تحليل الملفات، توليد الصور، والبحث في الإنترنت.\n\n"
         "🚀 **ماذا يمكنني أن أفعل؟**\n"
         "• 💻 برمجة وتحليل أكواد معقدة.\n"
         "• 📄 تحليل وتلخيص ملفات PDF و Word.\n"
         "• 🎨 رسم صور مذهلة (اكتب 'ارسم' متبوعاً بوصف).\n"
-        "• 🖼️ تحليل الصور وشرح محتواها.\n\n"
+        "• 🖼️ تحليل الصور وشرح محتواها.\n"
+        "• 🌐 البحث في الإنترنت (اكتب 'ابحث' متبوعاً بسؤالك).\n\n"
         "أرسل أي ملف أو كود أو سؤال لتبدأ!",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -55,10 +56,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🤖 **حول {BOT_NAME}**\n\n"
-        f"تم تطوير هذا البوت ليكون المساعد البرمجي والتقني الأول على تيليجرام.\n"
+        f"تم تطوير هذا البوت ليكون المساعد الذكي الشامل على تيليجرام.\n"
         f"المطور: {BOT_DEVELOPER}\n"
-        "التقنيات: Groq (Llama 3), Hugging Face (FLUX.1)\n"
-        "الإصدار: 2.0.0 (النسخة المطورة)",
+        "التقنيات: Groq (Llama 3), Hugging Face (FLUX.1), DuckDuckGo Search\n"
+        "الإصدار: 2.1.0 (تحديث البحث والإصلاحات)",
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -69,7 +70,8 @@ async def features(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2️⃣ **محلل مستندات**: دعم كامل لملفات PDF و Word وجميع ملفات الأكواد.\n"
         "3️⃣ **فنان رقمي**: توليد صور عالية الدقة باستخدام نماذج FLUX.\n"
         "4️⃣ **رؤية حاسوبية**: تحليل الصور بدقة واستخراج النصوص منها.\n"
-        "5️⃣ **سرعة فائقة**: استجابة لحظية بفضل تقنية Groq."
+        "5️⃣ **بحث إنترنت**: الوصول لمعلومات حديثة عبر البحث المباشر.\n"
+        "6️⃣ **سرعة فائقة**: استجابة لحظية بفضل تقنية Groq."
     ).format(BOT_NAME=BOT_NAME)
     await update.message.reply_text(features_text, parse_mode=ParseMode.MARKDOWN)
 
@@ -84,7 +86,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ مهلاً! لقد تجاوزت حد الطلبات. انتظر دقيقة ثم حاول مجدداً.")
         return
 
-    # التحقق من الاشتراك
     if not await check_user_subscription(update, context, FORCE_SUBSCRIBE_CHANNEL_ID):
         await send_subscription_prompt(update, context, FORCE_SUBSCRIBE_CHANNEL_URL)
         return
@@ -194,15 +195,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🎨 ماذا تريد أن أرسم؟ اكتب وصفاً بعد كلمة 'ارسم'.")
             return
 
-    # محادثة عادية
-    processing_msg = await update.message.reply_text("💬 جاري التفكير...")
+    # التحقق من طلب البحث
+    search_keywords = ["ابحث", "search", "جوجل", "google"]
+    use_search = False
+    query = user_message
+    if any(user_message.lower().startswith(kw) for kw in search_keywords):
+        use_search = True
+        for kw in search_keywords:
+            if query.lower().startswith(kw):
+                query = query[len(kw):].strip()
+                break
+    
+    if use_search and not query:
+        await update.message.reply_text("🌐 ماذا تريد أن أبحث عنه؟ اكتب سؤالك بعد كلمة 'ابحث'.")
+        return
+
+    # محادثة عادية أو بحث
+    status_text = "🌐 جاري البحث والتفكير..." if use_search else "💬 جاري التفكير..."
+    processing_msg = await update.message.reply_text(status_text)
+    
     try:
         history = chat_manager.get_history(user_id)
-        response = chat_with_ai(user_id, user_message, history)
+        response = chat_with_ai(user_id, query, history, use_search=use_search)
+        
         chat_manager.add_message(user_id, "user", user_message)
         chat_manager.add_message(user_id, "assistant", response)
         
-        # التعامل مع الأكواد البرمجية في الرد (إرسالها كملفات إذا كانت طويلة)
         if "```" in response:
             code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", response, re.DOTALL)
             if code_blocks and len(code_blocks[0]) > 1000:
@@ -233,7 +251,7 @@ def main():
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    logger.info(f"🚀 {BOT_NAME} v2.0 قيد التشغيل...")
+    logger.info(f"🚀 {BOT_NAME} v2.1 قيد التشغيل...")
     application.run_polling()
 
 if __name__ == "__main__":

@@ -1,30 +1,36 @@
 import io
 import logging
 import base64
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
 def preprocess_image_for_analysis(image_path: str) -> str:
-    """تحسين الصورة للتحليل فقط (بدون تغيير)."""
+    """
+    تحضير الصورة للتحليل عن طريق تغيير حجمها (إذا كانت كبيرة جداً) وتحويلها إلى Base64.
+    """
     try:
         with Image.open(image_path) as img:
-            # تحسينات بسيطة لضمان وضوح الصورة للتحليل بواسطة نموذج الرؤية
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(2.0)
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.8)
-            img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
-            enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(1.2)
+            # تحويل إلى RGB إذا كانت بصيغة مختلفة (مثل RGBA)
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
+            
+            # تصغير حجم الصورة إذا كانت كبيرة جداً لتوفير الباندويث وتجنب قيود API
+            max_size = (1024, 1024)
+            if img.width > max_size[0] or img.height > max_size[1]:
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                logger.info(f"📏 تم تصغير حجم الصورة إلى {img.size}")
+
             buffered = io.BytesIO()
-            img.save(buffered, format="JPEG", quality=95)
+            img.save(buffered, format="JPEG", quality=85)
             encoded_string = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            logger.info("🪄 تم تحسين الصورة للتحليل.")
+            logger.info("✅ تم تحضير الصورة للتحليل بنجاح.")
             return encoded_string
     except Exception as e:
-        logger.warning(f"⚠️ تعذر تحسين الصورة للتحليل، سيتم إرسالها كما هي: {e}")
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+        logger.warning(f"⚠️ حدث خطأ أثناء معالجة الصورة، سيتم إرسالها كما هي: {e}")
+        try:
+            with open(image_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode("utf-8")
+        except Exception as e2:
+            logger.error(f"❌ فشل قراءة الصورة تماماً: {e2}")
+            raise e2
