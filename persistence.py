@@ -1,7 +1,6 @@
 import logging
 from collections import deque
 from typing import List, Dict, Any
-from telegram.ext import PicklePersistence
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +32,5 @@ class ChatHistoryManager:
     def trim_history(self, user_id: int, max_tokens_estimate: int = 3000):
         """
         تقليم التاريخ بناءً على تقدير عدد الرموز.
-        (تطبيق بسيط: يحتفظ بعدد max_messages فقط)
         """
         pass
-
-# تهيئة Persistence و ChatHistoryManager
-persistence = PicklePersistence(filepath="bot_data.pickle")
-chat_manager = ChatHistoryManager()

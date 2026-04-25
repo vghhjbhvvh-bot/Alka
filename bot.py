@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFi
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
-    filters, CallbackContext, CallbackQueryHandler, ContextTypes
+    filters, CallbackContext, CallbackQueryHandler, ContextTypes, PicklePersistence
 )
 from config import (
     TELEGRAM_BOT_TOKEN, BOT_NAME, BOT_DEVELOPER, 
@@ -20,7 +20,7 @@ from groq_service import (
 )
 from image_generator import generate_image
 from file_handler import extract_text_from_file
-from persistence import persistence, chat_manager # تم التأكد من الاستيراد الصحيح
+from persistence import ChatHistoryManager # استيراد الفئة فقط
 from rate_limiter import RateLimiter
 from subscription import check_user_subscription, send_subscription_prompt, subscription_button_callback
 
@@ -29,6 +29,10 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# تهيئة Persistence و ChatHistoryManager داخلياً لتجنب مشاكل الاستيراد
+bot_persistence = PicklePersistence(filepath="bot_data.pickle")
+chat_manager = ChatHistoryManager()
 
 # محدد معدل الطلبات
 rate_limiter = RateLimiter(max_requests=15, time_window=60)
@@ -218,7 +222,7 @@ def main():
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("❌ TELEGRAM_BOT_TOKEN غير موجود")
     
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(bot_persistence).build()
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("about", about))
