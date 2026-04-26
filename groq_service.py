@@ -1,47 +1,63 @@
+import os
 import logging
-import groq
+import base64
+from groq import Groq
 from config import GROQ_API_KEY, GROQ_MODEL_NAME, BOT_NAME, BOT_DEVELOPER
-from image_processor import preprocess_image_for_analysis
-from code_analyzer import get_code_analysis_prompt
 from search_service import search_web, format_search_prompt
 
 logger = logging.getLogger(__name__)
 
-try:
-    client = groq.Groq(api_key=GROQ_API_KEY)
-    logger.info("✅ تم إنشاء عميل Groq بنجاح.")
-except Exception as e:
-    logger.error(f"❌ فشل إنشاء عميل Groq: {e}")
-    client = None
+client = None
+if GROQ_API_KEY:
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        logger.info("✅ تم تهيئة عميل Groq بنجاح.")
+    except Exception as e:
+        logger.error(f"❌ فشل تهيئة عميل Groq: {e}")
+else:
+    logger.warning("⚠️ مفتاح GROQ_API_KEY غير موجود. لن تعمل وظائف Groq.")
 
-def analyze_image(image_path: str) -> str:
+# قائمة بنماذج الرؤية المتاحة والموثوقة (مع الأفضلية)
+VISION_MODELS = [
+    "llama-3.2-90b-vision-preview",  # نموذج قوي
+    "llava-v1.5-7b-4096-preview",    # بديل خفيف
+]
+
+async def analyze_image(image_base64: str) -> str:
     if client is None:
         raise RuntimeError("عميل Groq غير مهيأ.")
     
-    image_base64 = preprocess_image_for_analysis(image_path)
     prompt = (
-        "أنت خبير تحليل صور محترف. حلل هذه الصورة بدقة باللغة العربية. "
-        "صف محتويات الصورة، الألوان، النصوص الموجودة، وأي تفاصيل هامة. "
-        "إذا كانت الصورة تحتوي على كود برمج، فقم باستخراجه وشرحه."
+        "أنت خبير في تحليل الصور. قم بوصف الصورة بدقة وتفصيل، مع التركيز على العناصر الرئيسية، "
+        "الألوان، الحالة العامة، وأي نص ظاهر. قدم تحليلاً شاملاً وواضحاً باللغة العربية. "
+        "إذا كانت الصورة تحتوي على واجهة مستخدم، قم بوصف الواجهة وشرحها."
     )
     
-    try:
-        chat_completion = client.chat.completions.create(
-            model="llama-3.2-11b-vision-preview",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                ]
-            }],
-            temperature=0.5,
-            max_tokens=2048
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e:
-        logger.error(f"❌ فشل تحليل الصورة: {e}")
-        raise RuntimeError(f"فشل تحليل الصورة: {e}")
+    for model_name in VISION_MODELS:
+        try:
+            logger.info(f"🔍 جاري تحليل الصورة باستخدام نموذج Groq: {model_name}")
+            chat_completion = client.chat.completions.create(
+                model=model_name,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                    ]
+                }],
+                temperature=0.5,
+                max_tokens=2048
+            )
+            logger.info(f"✅ تم تحليل الصورة بنجاح باستخدام {model_name}")
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            logger.warning(f"❌ فشل تحليل الصورة باستخدام {model_name}: {e}")
+            # إذا فشل النموذج الحالي، جرب النموذج التالي في القائمة
+            continue
+    
+    # إذا فشلت جميع النماذج
+    logger.error("❌ فشلت جميع محاولات تحليل الصورة باستخدام نماذج Groq المتاحة.")
+    raise RuntimeError("فشل تحليل الصورة: لم يتمكن أي نموذج رؤية من Groq من معالجة الطلب.")
 
 def chat_with_ai(user_id: int, user_message: str, history: list, use_search: bool = False) -> str:
     if client is None:
@@ -49,7 +65,7 @@ def chat_with_ai(user_id: int, user_message: str, history: list, use_search: boo
     
     system_prompt = (
         f"أنت {BOT_NAME}، مساعد ذكي فائق القدرات تم تطويره بواسطة {BOT_DEVELOPER}. "
-        "أنت خبير برمجيات بمستوى 'Senior Architect'، تتقن جميع لغات البرمجة والتقنيات الحديثة. "
+        "أنت خبير برمجيات بمستوى \'Senior Architect\'، تتقن جميع لغات البرمجة والتقنيات الحديثة. "
         "قواعدك:\n"
         "1. كن دقيقاً جداً في الأكواد البرمجية واشرحها بوضوح.\n"
         "2. استخدم أفضل الممارسات (Clean Code, Design Patterns).\n"
@@ -63,7 +79,6 @@ def chat_with_ai(user_id: int, user_message: str, history: list, use_search: boo
         search_results = search_web(user_message)
         current_message = format_search_prompt(user_message, search_results)
         logger.info("🌐 تم دمج نتائج البحث في الطلب.")
-
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-20:]:
         if msg.get("role") in ["user", "assistant"]:
@@ -149,3 +164,12 @@ def enhance_image_prompt(user_prompt: str) -> str:
     except Exception as e:
         logger.error(f"❌ فشل تحسين المطالبة: {e}")
         return user_prompt
+
+# Helper function for code analysis prompt (assuming it exists elsewhere or is meant to be added)
+def get_code_analysis_prompt(code: str, file_name: str, user_question: str) -> str:
+    # This function was not provided in the original groq_service.py, 
+    # but is called by analyze_code. Adding a placeholder for now.
+    if user_question:
+        return f"أنت خبير في تحليل الكود. بناءً على الكود التالي من الملف {file_name}، أجب عن السؤال بدقة.\n\nالكود:\n```python\n{code}\n```\n\nالسؤال: {user_question}"
+    else:
+        return f"أنت خبير في تحليل الكود. قم بتقديم تحليل شامل ومنظم للكود التالي من الملف {file_name}، مع ذكر أهم النقاط، المشاكل المحتملة، واقتراحات التحسين.\n\nالكود:\n```python\n{code}\n```"

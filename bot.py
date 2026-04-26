@@ -98,12 +98,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file = await context.bot.get_file(document.file_id)
         ext = os.path.splitext(file_name)[1].lower()
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            await file.download_to_drive(tmp.name)
-            file_path = tmp.name
+        file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                await file.download_to_drive(tmp.name)
+                file_path = tmp.name
 
-        content, is_code = await extract_text_from_file(file_path, file_name)
-        os.unlink(file_path)
+            content, is_code = await extract_text_from_file(file_path, file_name)
+        finally:
+            if file_path and os.path.exists(file_path):
+                os.unlink(file_path)
 
         if not content:
             await processing_msg.edit_text("❌ عذراً، لم أتمكن من قراءة محتوى هذا الملف.")
@@ -136,12 +140,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         file = await context.bot.get_file(photo.file_id)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            await file.download_to_drive(tmp.name)
-            photo_path = tmp.name
+        photo_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                await file.download_to_drive(tmp.name)
+                photo_path = tmp.name
 
-        analysis = analyze_image(photo_path)
-        os.unlink(photo_path)
+            analysis = analyze_image(photo_path)
+        finally:
+            if photo_path and os.path.exists(photo_path):
+                os.unlink(photo_path)
         await processing_msg.edit_text(analysis, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         logger.error(f"خطأ في تحليل الصورة: {e}")
